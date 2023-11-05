@@ -3,6 +3,7 @@ package com.example.criminalintent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.location.Location
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
@@ -12,7 +13,10 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.doOnLayout
 import androidx.core.widget.doOnTextChanged
@@ -24,11 +28,22 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
+import androidx.viewbinding.ViewBinding
 import com.example.criminalintent.databinding.FragmentCrimeDetailBinding
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.tasks.CancellationToken
+import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.android.gms.tasks.OnTokenCanceledListener
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Date
-import java.util.UUID
+
 
 private const val TAG = "CrimeDetailFragment"
 class CrimeDetailFragment : Fragment() {
@@ -59,15 +74,21 @@ class CrimeDetailFragment : Fragment() {
         }
     }
 
+    private lateinit var fusedLocationProviderClient: FusedLocationProviderClient
+   // private lateinit var gpsText: TextView
+
+
     private var photoName: String? = null
+
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        _binding =
-            FragmentCrimeDetailBinding.inflate(layoutInflater, container, false)
+        _binding = FragmentCrimeDetailBinding.inflate(layoutInflater, container, false)
+        //gpsText = binding.getGps
+
         return binding.root
     }
 
@@ -78,6 +99,7 @@ class CrimeDetailFragment : Fragment() {
                 crimeDetailViewModel.updateCrime { oldCrime ->
                     oldCrime.copy(title = text.toString())
                 }
+
 
                 crimeSolved.setOnCheckedChangeListener { _, isChecked ->
                     crimeDetailViewModel.updateCrime { oldCrime ->
@@ -127,6 +149,12 @@ class CrimeDetailFragment : Fragment() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(requireContext())
+
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
@@ -165,8 +193,13 @@ class CrimeDetailFragment : Fragment() {
                 )
                 startActivity(chooserIntent)
             }
+            crimeGetGps.setOnClickListener {
+                getCrimeLocation()
+            }
+
         }
         updatePhoto(crime.photoFileName)
+
     }
     private fun getCrimeReport(crime: Crime): String {
         val solvedString = if (crime.isSolved) {
@@ -210,6 +243,53 @@ class CrimeDetailFragment : Fragment() {
             )
         return resolvedActivity != null
     }
+
+    private fun getCrimeLocation() {
+        if (ActivityCompat.checkSelfPermission(
+                requireContext(),
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            || ActivityCompat.checkSelfPermission(
+                requireContext(),
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.d("GPS", "Have permissions. Try to get a location")
+            if (GoogleApiAvailability.getInstance()
+                    .isGooglePlayServicesAvailable(requireContext()) == ConnectionResult.SUCCESS
+            ) {
+                //Get Location
+                fusedLocationProviderClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    object : CancellationToken() {
+                        override fun onCanceledRequested(p0: OnTokenCanceledListener): CancellationToken {
+                            TODO("Not yet implemented")
+                        }
+
+                        override fun isCancellationRequested(): Boolean {
+                            TODO("Not yet implemented")
+                        }
+                    }).addOnSuccessListener { location: Location? ->
+                    location?.let {
+                        crimeDetailViewModel.updateCrime { oldCrime ->
+                            oldCrime.copy(lat = location.latitude, lon = location.longitude)
+                        }
+                        // Update EditText field
+                       //binding.getGps.setText("Latitude: ${location.latitude}, Longitude: ${location.longitude}")
+                       // binding.getGps.setText("Latitude: 14" + "Longitude: 15")
+                    }
+                    Log.d("GPS", "Got a location: " + location)
+                }
+            }
+        }
+    }
+
+
+
+
+
+
+
     private fun updatePhoto(photoFileName: String?) {
         if (binding.crimePhoto.tag != photoFileName) {
             val photoFile = photoFileName?.let {
